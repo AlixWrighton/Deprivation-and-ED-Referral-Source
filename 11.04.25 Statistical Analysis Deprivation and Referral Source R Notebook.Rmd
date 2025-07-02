@@ -1,0 +1,630 @@
+---
+title: "Statistical Analysis of Deprivation and ED Referral Source RIE 2022 + 2023"
+output:
+  html_document:
+    df_print: paged
+---
+
+Load relevant packages
+```{r}
+library(readr)
+library (finalfit)
+library(tidyverse)
+```
+
+Read in data 
+```{r}
+AEdatadeprivation_ReferralSource <- read_csv("/Users/Alex.M.Wrighton/Documents/ED_Deprivation_Project_Alix_Wrighton/AEdatadeprivation_ReferralSource.zip")
+View(AEdatadeprivation_ReferralSource)
+```
+
+Sort data to include on RIE presentations between 2022 and 2022 for patients age >= 16
+
+```{r}
+Data_2022_2023_RIE <- AEdatadeprivation_ReferralSource %>% select (ARRIVAL_DATE, SEX, DEPRV_SCT_QUINTILE, DEPRV_SCT_DECILE, AGE_ON_ARRIVAL, LOCATION_CODE, SOURCE_OF_REFERRAL) %>% filter(LOCATION_CODE == "RIE") %>% filter(ARRIVAL_DATE < "2024-01-01") %>% filter (ARRIVAL_DATE > "2021-12-31") %>%  filter(AGE_ON_ARRIVAL > 15)
+```
+
+Remove NAs and unknown sexes
+
+```{r}
+Complete_data <- Data_2022_2023_RIE %>% filter(!is.na(ARRIVAL_DATE)) %>% filter(!is.na(SEX)) %>% filter(!is.na(DEPRV_SCT_DECILE)) %>% filter(!is.na(DEPRV_SCT_QUINTILE)) %>% filter(!is.na(AGE_ON_ARRIVAL)) %>% filter(!is.na (LOCATION_CODE)) %>% filter(!is.na (SOURCE_OF_REFERRAL)) %>% filter(SEX %in% c("MALE", "FEMALE"))
+```
+
+Check data to ensure no outliers
+
+```{r}
+Complete_data %>% count(SEX)
+Complete_data %>% count(LOCATION_CODE)
+Complete_data %>% count(SOURCE_OF_REFERRAL)
+Complete_data %>% ggplot (aes (x= AGE_ON_ARRIVAL)) + geom_histogram()
+```
+
+Only include ages <120 years old (2 x patients with age of 120)
+```{r}
+Complete_data <- Complete_data %>% filter (AGE_ON_ARRIVAL < 120)
+```
+
+Changes variables into factors with levels
+
+```{r}
+factordata <- Complete_data %>% mutate (sex.factor = factor(SEX) %>% fct_recode ("Male" = "MALE", "Female" = "FEMALE") %>% ff_label ("Sex"))
+
+factordata <- factordata %>% mutate (deprv.factor = factor(DEPRV_SCT_DECILE) %>% fct_recode ("Decile 1" = "1", "Decile 2" = "2", "Decile 3" = "3","Decile 4" = "4", "Decile 5" = "5","Decile 6" = "6", "Decile 7" = "7", "Decile 8" = "8", "Decile 9" = "9", "Decile 10" = "10") %>% ff_label ("Deprivation Decile"))
+
+factordata <- factordata %>% mutate (referral.factor = factor(SOURCE_OF_REFERRAL) %>% fct_recode ("Self-referral" = "Self Referral to A&E", "NHS 24 Referral" = "NHS 24", "Flow Centre Referral" = "Flow Centre", "999 Emergency" = "999 Emergency", "GP referral" = "General Practitioner", "LUCS Referral" = "Lothian Unscheduled Care Services", "Police Referral" = "Police", "Reattend" = "Reattend", "Misc Referral" = "Social Work Dept" , "Misc Referral" = "Leith Community Treatment Centre", "Misc Referral" = "SAS Paramedic Practitioner Referral", "Misc Referral" = "Ophthalmic Referral", "Misc Referral" = "Other", "Misc Referral" = "RVH", "Misc Referral" = "RHCYP/RHSC", "Misc Referral" = "Liberton", "Misc Referral" = "Roodlands", "Misc Referral" = "Astley Ainslie Hospital", "Misc Referral" = "Hospital (Outwith LUHD)", "Misc Referral" = "WGH - MIU", "Misc Referral" = "St Johns", "Misc Referral" = "RIE" ))
+
+factordata <- factordata %>% mutate(age.factor = AGE_ON_ARRIVAL %>% cut(breaks = c(16,30,50,70,120), include.lowest = TRUE) %>% fct_recode("≤30" ="[16,30]","31 to 50" = "(30,50]", "51 to 70" = "(50,70]", ">70"="(70,120]") %>%ff_label("Age (years)"))
+
+```
+
+
+# GP Referral
+
+Create summarised column for referral by GP or not
+```{r}
+factordata <- factordata %>% mutate(referral_gp = fct_collapse(referral.factor,"Not referred by GP" = c("999 Emergency", "Flow Centre Referral", "LUCS Referral", "NHS 24 Referral", "Police Referral", "Reattend", "Self-referral", "Misc Referral"))) %>% ff_label ("GP Referral")
+```
+
+Create final fit table for GP referral with p-values displayed. Note: Decile 1 removed as results are being compared relative to it
+
+```{r}
+factordata %>% summary_factorlist(dependent   = "referral_gp", explanatory = "deprv.factor", p = TRUE)
+```
+
+Create model for GP referral vs deprivation + age + sex
+```{r}
+factordata %>%  summary_factorlist(dependent   = "referral_gp", explanatory = c("deprv.factor", "age.factor", "sex.factor"), p = TRUE)
+```
+
+
+Create model for GP referral vs deprivation
+```{r}
+fit_gp <- glm(referral_gp ~ deprv.factor, data = factordata, family = binomial)
+summary(fit_gp)
+library(broom)
+fit_gp %>% tidy (conf.int = TRUE, exp = TRUE)
+```
+
+Note: Desirable model with low AIC and high c-statistic
+Model for GP referral vs deprivation
+```{r}
+dependent_gp <- "referral_gp"
+explanatory_deprv <- "deprv.factor"
+```
+```{r}
+factordata %>% finalfit(dependent_gp, explanatory_deprv, metrics = TRUE)
+```
+
+
+Model for GP referral vs deprivation + age
+
+```{r}
+explanatory_deprv_age <- c ("deprv.factor", "age.factor")
+factordata %>% finalfit(dependent_gp, explanatory_deprv_age, metrics = TRUE)
+```
+
+Model for GP referral vs deprivation + sex
+
+```{r}
+explanatory_deprv_sex <- c ("deprv.factor", "sex.factor")
+factordata %>% finalfit(dependent_gp, explanatory_deprv_sex, metrics = TRUE)
+```
+
+Model for GP referral vs deprivation + age + sex
+
+```{r}
+explanatory_deprv_sex_age <- c ("deprv.factor", "age.factor", "sex.factor")
+factordata %>% finalfit (dependent_gp, explanatory_deprv_sex_age, metrics = TRUE)
+```
+
+Model for GP referral vs age + sex vs deprv+age+sex
+```{r}
+explanatory_multi <- c ("age.factor", "sex.factor")
+factordata %>% finalfit (dependent_gp, explanatory_deprv_sex_age, explanatory_multi, keep_models = TRUE, metrics = TRUE)
+```
+
+Model for GP referral vs deprivation +age + sex +age:sex (interaction term)
+```{r}
+explanatory_allterms <- c ("deprv.factor", "age.factor", "sex.factor", "sex.factor*age.factor")
+```
+```{r}
+factordata %>% finalfit(dependent_gp, explanatory_allterms, metrics = TRUE)
+```
+
+
+Model for GP referral vs age + sex + age:sex
+```{r}
+explanatory_reduced <- c ("age.factor", "sex.factor", "sex.factor*age.factor")
+factordata %>% finalfit(dependent_gp, explanatory_reduced, metrics = TRUE)
+```
+ 
+ Likelihood ratio test for GP
+```{r}
+install.packages("lmtest")
+model_fit_gp_deprv <- glm(referral_gp ~ deprv.factor, data = factordata, family = binomial)
+model_fit_gp_allterms <- glm(referral_gp ~ deprv.factor + age.factor + sex.factor + age.factor:sex.factor, data = factordata, family = binomial)
+lmtest::lrtest(model_fit_gp_deprv, model_fit_gp_allterms)
+```
+Forest plot for GP
+```{r}
+tiff("GP_OR_plot.tiff", width = 8, height = 5, units = 'in', res = 300)
+GP_ORplot <- factordata %>% or_plot(dependent_gp, explanatory_allterms)
+dev.off()
+```
+
+
+# Police Referral
+
+Create summarised column for referral by Police or not
+```{r}
+factordata <- factordata %>% mutate(referral_police = fct_collapse(referral.factor,"Not referred by Police" = c("999 Emergency", "Flow Centre Referral", "LUCS Referral", "NHS 24 Referral", "GP referral", "Reattend", "Self-referral", "Misc Referral"))) %>% ff_label ("Police Referral")
+```
+
+Create final fit table for Police referral with p-values displayed. Note: Decile 1 removed as results are being compared relative to it
+
+```{r}
+factordata %>% summary_factorlist(dependent   = "referral_police", explanatory = "deprv.factor", p = TRUE)
+```
+
+Create model for Police referral vs deprivation + age + sex
+```{r}
+factordata %>%  summary_factorlist(dependent   = "referral_police", explanatory = c("deprv.factor", "age.factor", "sex.factor"), p = TRUE)
+```
+
+
+Create model for Police referral vs deprivation
+```{r}
+fit_police <- glm(referral_police ~ deprv.factor, data = factordata, family = binomial)
+summary(fit_police)
+library(broom)
+fit_police %>% tidy (conf.int = TRUE, exp = TRUE)
+```
+
+Note: Desirable model with low AIC and high c-statistic
+
+Model for Police referral vs deprivation
+```{r}
+dependent_police <- "referral_police"
+explanatory_deprv <- "deprv.factor"
+```
+```{r}
+factordata %>% finalfit(dependent_police, explanatory_deprv, metrics = TRUE)
+```
+
+
+Model for Police referral vs deprivation + age
+
+```{r}
+explanatory_deprv_age <- c ("deprv.factor", "age.factor")
+factordata %>% finalfit(dependent_police, explanatory_deprv_age, metrics = TRUE)
+```
+
+Model for Police referral vs deprivation + sex
+
+```{r}
+explanatory_deprv_sex <- c ("deprv.factor", "sex.factor")
+factordata %>% finalfit(dependent_police, explanatory_deprv_sex, metrics = TRUE)
+```
+
+Model for Police referral vs deprivation + age + sex
+
+```{r}
+explanatory_deprv_sex_age <- c ("deprv.factor", "age.factor", "sex.factor")
+factordata %>% finalfit (dependent_police, explanatory_deprv_sex_age, metrics = TRUE)
+```
+
+Model for Police referral vs age + sex vs deprv+age+sex
+```{r}
+explanatory_multi <- c ("age.factor", "sex.factor")
+factordata %>% finalfit (dependent_police, explanatory_deprv_sex_age, explanatory_multi, keep_models = TRUE, metrics = TRUE)
+```
+
+Model for Police referral vs deprivation +age + sex +age:sex (interaction term)
+```{r}
+explanatory_allterms <- c ("deprv.factor", "age.factor", "sex.factor", "sex.factor*age.factor")
+```
+```{r}
+factordata %>% finalfit(dependent_police, explanatory_allterms, metrics = TRUE)
+```
+
+Model for Police referral vs age + sex + age:sex
+```{r}
+explanatory_reduced <- c ("age.factor", "sex.factor", "sex.factor*age.factor")
+factordata %>% finalfit(dependent_police, explanatory_reduced, metrics = TRUE)
+```
+ 
+ Likelihood ratio test for Police
+```{r}
+install.packages("lmtest")
+model_fit_police_deprv <- glm(referral_police ~ deprv.factor, data = factordata, family = binomial)
+model_fit_police_allterms <- glm(referral_police ~ deprv.factor + age.factor + sex.factor + age.factor:sex.factor, data = factordata, family = binomial)
+lmtest::lrtest(model_fit_police_deprv, model_fit_police_allterms)
+```
+Forest plot for Police
+```{r}
+tiff("Police_OR_plot.tiff", width = 8, height = 5, units = 'in', res = 300)
+Police_ORplot <- factordata %>% or_plot(dependent_police, explanatory_allterms)
+dev.off()
+```
+
+# NHS 24 Referral
+
+Create summarised column for referral by NHS 24 or not
+```{r}
+factordata <- factordata %>% mutate(referral_nhs24 = fct_collapse(referral.factor,"Not referred by NHS 24" = c("999 Emergency", "Flow Centre Referral", "LUCS Referral", "GP referral", "Police Referral", "Reattend", "Self-referral", "Misc Referral"))) %>% ff_label ("NHS 24 Referral")
+```
+
+Create final fit table for NHS 24 referral with p-values displayed. Note: Decile 1 removed as results are being compared relative to it
+
+```{r}
+factordata %>% summary_factorlist(dependent   = "referral_nhs24", explanatory = "deprv.factor", p = TRUE)
+```
+
+Create model for NHS 24 referral vs deprivation + age + sex
+```{r}
+factordata %>%  summary_factorlist(dependent   = "referral_nhs24", explanatory = c("deprv.factor", "age.factor", "sex.factor"), p = TRUE)
+```
+
+
+Create model for NHS 24 referral vs deprivation
+```{r}
+fit_nhs24 <- glm(referral_nhs24 ~ deprv.factor, data = factordata, family = binomial)
+summary(fit_nhs24)
+library(broom)
+fit_nhs24 %>% tidy (conf.int = TRUE, exp = TRUE)
+
+```
+
+Note: Desirable model with low AIC and high c-statistic
+
+Model for NHS 24 referral vs deprivation
+```{r}
+dependent_nhs24 <- "referral_nhs24"
+explanatory_deprv <- "deprv.factor"
+```
+```{r}
+factordata %>% finalfit(dependent_nhs24, explanatory_deprv, metrics = TRUE)
+```
+
+Model for NHS 24 referral vs deprivation + age
+
+```{r}
+explanatory_deprv_age <- c ("deprv.factor", "age.factor")
+factordata %>% finalfit(dependent_nhs24, explanatory_deprv_age, metrics = TRUE)
+```
+
+Model for NHS 24 referral vs deprivation + sex
+
+```{r}
+explanatory_deprv_sex <- c ("deprv.factor", "sex.factor")
+factordata %>% finalfit(dependent_nhs24, explanatory_deprv_sex, metrics = TRUE)
+```
+
+Model for NHS 24 referral vs deprivation + age + sex
+
+```{r}
+explanatory_deprv_sex_age <- c ("deprv.factor", "age.factor", "sex.factor")
+factordata %>% finalfit (dependent_nhs24, explanatory_deprv_sex_age, metrics = TRUE)
+```
+
+Model for NHS 24 referral vs age + sex vs deprv+age+sex
+```{r}
+explanatory_multi <- c ("age.factor", "sex.factor")
+factordata %>% finalfit (dependent_nhs24, explanatory_deprv_sex_age, explanatory_multi, keep_models = TRUE, metrics = TRUE)
+```
+
+Model for NHS24 referral vs deprivation +age + sex +age:sex (interaction term)
+```{r}
+explanatory_allterms <- c ("deprv.factor", "age.factor", "sex.factor", "sex.factor*age.factor")
+```
+```{r}
+factordata %>% finalfit(dependent_nhs24, explanatory_allterms, metrics = TRUE)
+```
+
+Model for NHS 24 referral vs age + sex + age:sex
+```{r}
+explanatory_reduced <- c ("age.factor", "sex.factor", "sex.factor*age.factor")
+factordata %>% finalfit(dependent_nhs24, explanatory_reduced, metrics = TRUE)
+```
+ 
+ Likelihood ratio test for NHS24
+```{r}
+install.packages("lmtest")
+model_fit_nhs24_deprv <- glm(referral_nhs24 ~ deprv.factor, data = factordata, family = binomial)
+model_fit_nhs24_allterms <- glm(referral_nhs24 ~ deprv.factor + age.factor + sex.factor + age.factor:sex.factor, data = factordata, family = binomial)
+lmtest::lrtest(model_fit_nhs24_deprv, model_fit_nhs24_allterms)
+```
+Forest plot for NHS24
+```{r}
+tiff("NHS24_OR_plot.tiff", width = 8, height = 5, units = 'in', res = 300)
+NHS24_ORplot <- factordata %>% or_plot(dependent_nhs24, explanatory_allterms)
+dev.off()
+```
+
+# 999 Emergency Referral
+
+Create summarised column for referral by 999 or not
+```{r}
+factordata <- factordata %>% mutate(referral_999 = fct_collapse(referral.factor,"Not referred by 999 Emergency" = c("NHS 24 Referral", "Flow Centre Referral", "LUCS Referral", "GP referral", "Police Referral", "Reattend", "Self-referral", "Misc Referral"))) %>% ff_label ("999 Emergency")
+```
+
+Create final fit table for 999 referral with p-values displayed. Note: Decile 1 removed as results are being compared relative to it
+
+```{r}
+factordata %>% summary_factorlist(dependent   = "referral_999", explanatory = "deprv.factor", p = TRUE)
+```
+
+Create model for 999 referral vs deprivation + age + sex
+```{r}
+factordata %>%  summary_factorlist(dependent   = "referral_999", explanatory = c("deprv.factor", "age.factor", "sex.factor"), p = TRUE)
+```
+
+
+Create model for 999 referral vs deprivation
+```{r}
+fit_999 <- glm(referral_999 ~ deprv.factor, data = factordata, family = binomial)
+summary(fit_999)
+library(broom)
+fit_999 %>% tidy (conf.int = TRUE, exp = TRUE)
+```
+
+Note: Desirable model with low AIC and high c-statistic
+
+Model for 999 referral vs deprivation
+```{r}
+dependent_999 <- "referral_999"
+explanatory_deprv <- "deprv.factor"
+```
+```{r}
+factordata %>% finalfit(dependent_999, explanatory_deprv, metrics = TRUE)
+```
+
+Model for 999 referral vs deprivation + age
+
+```{r}
+explanatory_deprv_age <- c ("deprv.factor", "age.factor")
+factordata %>% finalfit(dependent_999, explanatory_deprv_age, metrics = TRUE)
+```
+
+Model for 999 referral vs deprivation + sex
+
+```{r}
+explanatory_deprv_sex <- c ("deprv.factor", "sex.factor")
+factordata %>% finalfit(dependent_999, explanatory_deprv_sex, metrics = TRUE)
+```
+
+Model for 999 referral vs deprivation + age + sex
+
+```{r}
+explanatory_deprv_sex_age <- c ("deprv.factor", "age.factor", "sex.factor")
+factordata %>% finalfit (dependent_999, explanatory_deprv_sex_age, metrics = TRUE)
+```
+
+Model for 999 referral vs age + sex vs deprv+age+sex
+```{r}
+explanatory_multi <- c ("age.factor", "sex.factor")
+factordata %>% finalfit (dependent_999, explanatory_deprv_sex_age, explanatory_multi, keep_models = TRUE, metrics = TRUE)
+```
+
+Model for 999 referral vs deprivation +age + sex +age:sex (interaction term)
+```{r}
+explanatory_allterms <- c ("deprv.factor", "age.factor", "sex.factor", "sex.factor*age.factor")
+```
+```{r}
+factordata %>% finalfit(dependent_999, explanatory_allterms, metrics = TRUE)
+```
+
+
+Model for 999 referral vs age + sex + age:sex
+```{r}
+explanatory_reduced <- c ("age.factor", "sex.factor", "sex.factor*age.factor")
+factordata %>% finalfit(dependent_999, explanatory_reduced, metrics = TRUE)
+```
+ 
+ Likelihood ratio test for 999
+```{r}
+install.packages("lmtest")
+model_fit_999_deprv <- glm(referral_999 ~ deprv.factor, data = factordata, family = binomial)
+model_fit_999_allterms <- glm(referral_999 ~ deprv.factor + age.factor + sex.factor + age.factor:sex.factor, data = factordata, family = binomial)
+lmtest::lrtest(model_fit_999_deprv, model_fit_999_allterms)
+```
+Forest plot for 999
+```{r}
+
+tiff("999_OR_plot.tiff", width = 8, height = 5, units = 'in', res = 300)
+Emergency999_ORplot <- factordata %>% or_plot(dependent_999, explanatory_allterms)
+dev.off()
+```
+
+
+# Self Referral
+
+Create summarised column for referral by self referral or not
+```{r}
+factordata <- factordata %>% mutate(referral_selfreferral = fct_collapse(referral.factor,"Not referred by Self Referral" = c("NHS 24 Referral", "Flow Centre Referral", "LUCS Referral", "GP referral", "Police Referral", "Reattend", "999 Emergency", "Misc Referral"))) %>% ff_label ("Self Referral")
+```
+
+Create final fit table for self referral with p-values displayed. Note: Decile 1 removed as results are being compared relative to it
+
+```{r}
+factordata %>% summary_factorlist(dependent   = "referral_selfreferral", explanatory = "deprv.factor", p = TRUE)
+```
+
+Create model for self referral vs deprivation + age + sex
+```{r}
+factordata %>%  summary_factorlist(dependent   = "referral_selfreferral", explanatory = c("deprv.factor", "age.factor", "sex.factor"), p = TRUE)
+```
+
+
+Create model for self referral vs deprivation
+```{r}
+fit_selfreferral <- glm(referral_selfreferral ~ deprv.factor, data = factordata, family = binomial)
+summary(fit_selfreferral)
+library(broom)
+fit_selfreferral %>% tidy (conf.int = TRUE, exp = TRUE)
+```
+
+Note: Desirable model with low AIC and high c-statistic
+
+Model for self referral vs deprivation
+```{r}
+dependent_selfreferral<- "referral_selfreferral"
+explanatory_deprv <- "deprv.factor"
+```
+```{r}
+factordata %>% finalfit(dependent_selfreferral, explanatory_deprv, metrics = TRUE)
+```
+
+
+Model for self referral vs deprivation + age
+
+```{r}
+explanatory_deprv_age <- c ("deprv.factor", "age.factor")
+factordata %>% finalfit(dependent_selfreferral, explanatory_deprv_age, metrics = TRUE)
+```
+
+Model for self referral vs deprivation + sex
+
+```{r}
+explanatory_deprv_sex <- c ("deprv.factor", "sex.factor")
+factordata %>% finalfit(dependent_selfreferral, explanatory_deprv_sex, metrics = TRUE)
+```
+
+Model for self referral vs deprivation + age + sex
+
+```{r}
+explanatory_deprv_sex_age <- c ("deprv.factor", "age.factor", "sex.factor")
+factordata %>% finalfit (dependent_selfreferral, explanatory_deprv_sex_age, metrics = TRUE)
+```
+
+Model for self referral vs age + sex vs deprv+age+sex
+```{r}
+explanatory_multi <- c ("age.factor", "sex.factor")
+factordata %>% finalfit (dependent_selfreferral, explanatory_deprv_sex_age, explanatory_multi, keep_models = TRUE, metrics = TRUE)
+```
+
+Model for self referral vs deprivation +age + sex +age:sex (interaction term)
+```{r}
+explanatory_allterms <- c ("deprv.factor", "age.factor", "sex.factor", "sex.factor*age.factor")
+```
+```{r}
+factordata %>% finalfit(dependent_selfreferral, explanatory_allterms, metrics = TRUE)
+```
+
+
+Model for self referral vs age + sex + age:sex
+```{r}
+explanatory_reduced <- c ("age.factor", "sex.factor", "sex.factor*age.factor")
+factordata %>% finalfit(dependent_selfreferral, explanatory_reduced, metrics = TRUE)
+```
+ 
+ Likelihood ratio test for self referral
+```{r}
+install.packages("lmtest")
+model_fit_self_deprv <- glm(referral_selfreferral ~ deprv.factor, data = factordata, family = binomial)
+model_fit_self_allterms <- glm(referral_selfreferral ~ deprv.factor + age.factor + sex.factor + age.factor:sex.factor, data = factordata, family = binomial)
+lmtest::lrtest(model_fit_self_deprv, model_fit_self_allterms)
+```
+
+Forest plot for self referral
+```{r}
+tiff("Selfreferral_OR_plot.tiff", width = 8, height = 5, units = 'in', res = 300)
+Selfreferral_ORplot <- factordata %>% or_plot(dependent_selfreferral, explanatory_allterms)
+dev.off()
+```
+
+# Flow Centre Referral
+
+Create summarised column for referral by Flow centre or not
+```{r}
+factordata <- factordata %>% mutate(referral_flow = fct_collapse(referral.factor,"Not referred by Flow Centre" = c("NHS 24 Referral", "Self-referral", "LUCS Referral", "GP referral", "Police Referral", "Reattend", "999 Emergency", "Misc Referral"))) %>% ff_label ("Flow Centre Referral")
+```
+
+Create final fit table for Flow centre referral with p-values displayed. Note: Decile 1 removed as results are being compared relative to it
+
+```{r}
+factordata %>% summary_factorlist(dependent   = "referral_flow", explanatory = "deprv.factor", p = TRUE)
+```
+
+Create model for flow centre referral vs deprivation + age + sex
+```{r}
+factordata %>%  summary_factorlist(dependent   = "referral_flow", explanatory = c("deprv.factor", "age.factor", "sex.factor"), p = TRUE)
+```
+
+
+Create model for flow centre referral vs deprivation
+```{r}
+fit_flow <- glm(referral_flow ~ deprv.factor, data = factordata, family = binomial)
+summary(fit_flow)
+library(broom)
+fit_flow %>% tidy (conf.int = TRUE, exp = TRUE)
+```
+
+Note: Desirable model with low AIC and high c-statistic
+
+Model for flow centre referral vs deprivation
+```{r}
+dependent_flow <- "referral_flow"
+explanatory_deprv <- "deprv.factor"
+```
+```{r}
+factordata %>% finalfit(dependent_flow, explanatory_deprv, metrics = TRUE)
+```
+
+Model for flow centre referral vs deprivation + age
+
+```{r}
+explanatory_deprv_age <- c ("deprv.factor", "age.factor")
+factordata %>% finalfit(dependent_flow, explanatory_deprv_age, metrics = TRUE)
+```
+
+Model for flow centre referral vs deprivation + sex
+
+```{r}
+explanatory_deprv_sex <- c ("deprv.factor", "sex.factor")
+factordata %>% finalfit(dependent_flow, explanatory_deprv_sex, metrics = TRUE)
+```
+
+Model for flow centre referral vs deprivation + age + sex
+
+```{r}
+explanatory_deprv_sex_age <- c ("deprv.factor", "age.factor", "sex.factor")
+factordata %>% finalfit (dependent_flow, explanatory_deprv_sex_age, metrics = TRUE)
+```
+
+Model for flow centre referral vs age + sex vs deprv+age+sex
+```{r}
+explanatory_multi <- c ("age.factor", "sex.factor")
+factordata %>% finalfit (dependent_flow, explanatory_deprv_sex_age, explanatory_multi, keep_models = TRUE, metrics = TRUE)
+```
+
+Model for flow centre referral vs deprivation +age + sex +age:sex (interaction term)
+```{r}
+explanatory_allterms <- c ("deprv.factor", "age.factor", "sex.factor", "sex.factor*age.factor")
+```
+```{r}
+factordata %>% finalfit(dependent_flow, explanatory_allterms, metrics = TRUE)
+```
+
+
+Model for flow centre referral vs age + sex + age:sex
+```{r}
+explanatory_reduced <- c ("age.factor", "sex.factor", "sex.factor*age.factor")
+factordata %>% finalfit(dependent_flow, explanatory_reduced, metrics = TRUE)
+```
+ 
+ Likelihood ratio test for flow centre referral
+```{r}
+install.packages("lmtest")
+model_fit_flow_deprv <- glm(referral_flow ~ deprv.factor, data = factordata, family = binomial)
+model_fit_flow_allterms <- glm(referral_flow ~ deprv.factor + age.factor + sex.factor + age.factor:sex.factor, data = factordata, family = binomial)
+lmtest::lrtest(model_fit_flow_deprv, model_fit_flow_allterms)
+```
+
+Forest plot for flow centre referral
+```{r}
+tiff("Flowcentre_OR_plot.tiff", width = 8, height = 5, units = 'in', res = 300)
+Flowcentre_ORplot <- factordata %>% or_plot(dependent_flow, explanatory_allterms)
+dev.off()
+```
+
