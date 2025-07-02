@@ -1,0 +1,288 @@
+---
+title: "Deprivation and ED Referral Source RIE 2022 + 2023"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Load relevant packages
+```{r}
+library(readr)
+library (finalfit)
+library(tidyverse)
+```
+
+Read in data 
+```{r}
+AEdatadeprivation_ReferralSource <- read_csv("/Users/Alex.M.Wrighton/Documents/ED_Deprivation_Project_Alix_Wrighton/AEdatadeprivation_ReferralSource.zip")
+View(AEdatadeprivation_ReferralSource)
+```
+
+Sort data to include on RIE presentations between 2022 and 2022 for patients age >= 16
+
+```{r}
+Data_2022_2023_RIE <- AEdatadeprivation_ReferralSource %>% select (ARRIVAL_DATE, SEX, DEPRV_SCT_QUINTILE, DEPRV_SCT_DECILE, AGE_ON_ARRIVAL, LOCATION_CODE, SOURCE_OF_REFERRAL) %>% filter(LOCATION_CODE == "RIE") %>% filter(ARRIVAL_DATE < "2024-01-01") %>% filter (ARRIVAL_DATE > "2021-12-31") %>%  filter(AGE_ON_ARRIVAL > 15)
+```
+
+Remove NAs and unknown sexes and outlier ages (i.e. Age 120 yrs)
+```{r}
+Complete_data <- Data_2022_2023_RIE %>% filter(!is.na(ARRIVAL_DATE)) %>% filter(!is.na(SEX)) %>% filter(!is.na(DEPRV_SCT_DECILE)) %>% filter(!is.na(DEPRV_SCT_QUINTILE)) %>% filter(!is.na(AGE_ON_ARRIVAL)) %>% filter(!is.na (LOCATION_CODE)) %>% filter(!is.na (SOURCE_OF_REFERRAL)) %>% filter(SEX %in% c("MALE", "FEMALE")) %>% filter (AGE_ON_ARRIVAL < 120)
+```
+
+Check data to ensure no outliers
+
+```{r}
+Complete_data %>% count(SEX)
+Complete_data %>% count(LOCATION_CODE)
+Complete_data %>% count(SOURCE_OF_REFERRAL)
+mean(Complete_data$AGE_ON_ARRIVAL)
+median(Complete_data$AGE_ON_ARRIVAL)
+Complete_data %>% ggplot (aes (x= AGE_ON_ARRIVAL)) + geom_histogram()
+Complete_data %>% ggplot (aes (x= DEPRV_SCT_DECILE)) + geom_histogram()
+```
+
+Frequency of referral source table 
+```{r}
+Freq_referral <- table(Complete_data$SOURCE_OF_REFERRAL)
+Freq_referral <- as.data.frame (Freq_referral)
+```
+
+Summarised referral source frequency table 
+```{r}
+colnames(Freq_referral) <- c("Referral_source","Frequency")
+
+
+y <- Freq_referral %>% filter(Referral_source %in% c("Social Work Dept", "Leith Community Treatment Centre", "SAS Paramedic Practitioner Referral", "Ophthalmic Referral", "Other", "RIE", "WGH - MIU", "RVH", "RHCYP/RHSC",  "Liberton", "Roodlands", "Astley Ainslie Hospital", "Hospital (Outwith LUHD)",  "St Johns")) %>% summarise(Referral_source = "Misc", Frequency = sum(Frequency))
+
+
+Summarised_freq_referral <-bind_rows(Freq_referral, y) 
+
+
+Summarised_freq_referral <- subset(Summarised_freq_referral, !Referral_source %in% c("RVH", "RHCYP/RHSC", "Liberton", "Roodlands", "Astley Ainslie Hospital", "Hospital (Outwith LUHD)",  "St Johns", "Social Work Dept", "Leith Community Treatment Centre", "SAS Paramedic Practitioner Referral", "Ophthalmic Referral", "Other", "RIE", "WGH - MIU"))
+
+Summarised_freq_referral $Referral_source[Summarised_freq_referral $Referral_source == "Lothian Unscheduled Care Services"] <- "LUCS"
+
+```
+
+Frequency of deprivation decline table
+
+```{r}
+Freq_deprv<- table(Complete_data$DEPRV_SCT_DECILE)
+Freq_deprv <- as.data.frame (Freq_deprv)
+colnames(Freq_deprv) <- c("Deprivation_decile","Frequency")
+Freq_deprv$`Deprivation_decile`<- c ("SIMD 1", "SIMD 2", "SIMD 3", "SIMD 4", "SIMD 5", "SIMD 6", "SIMD 7", "SIMD 8", "SIMD 9", "SIMD X")
+```
+
+Add year column
+```{r}
+class(Complete_data$ARRIVAL_DATE)
+Complete_data$ARRIVAL_DATE <- as.Date(Complete_data$ARRIVAL_DATE)
+Complete_data$Year <- year(ymd(Complete_data$ARRIVAL_DATE))
+```
+
+Create dataset “Freq_deprv_referral” with only Deprivation and referral source , in order to make frequency table
+```{r}
+Freq_Deprv_referral <- table(Complete_data$DEPRV_SCT_DECILE, Complete_data$SOURCE_OF_REFERRAL)
+Freq_Deprv_referral <- as.data.frame(Freq_Deprv_referral)
+colnames(Freq_Deprv_referral) <- c("Deprivation_decile", "Referral_Source", "Frequency")
+transform(Freq_Deprv_referral, Frequency = as.numeric(Frequency))
+
+```
+
+Create continguency table for referral source and deprivation decline
+```{r}
+Continguency_table <- Freq_Deprv_referral %>% pivot_wider(names_from = Deprivation_decile, values_from = Frequency, values_fill = list(Frequency = 0))
+colnames(Continguency_table) <- c("Referral_source", "SIMD1", "SIMD2", "SIMD3", "SIMD4", "SIMD5", "SIMD6", "SIMD7", "SIMD8", "SIMD9", "SIMD10")
+
+```
+
+Consolidate non-significant rows into “Misc” and remove the summarised rows
+
+```{r}
+Misc <- Continguency_table %>% filter(Referral_source %in% c("Social Work Dept", "Leith Community Treatment Centre", "SAS Paramedic Practitioner Referral", "Ophthalmic Referral", "Other", "RVH", "RHCYP/RHSC",  "Liberton", "Roodlands", "Astley Ainslie Hospital", "Hospital (Outwith LUHD)",  "St Johns","RIE", "WGH - MIU")) %>% summarise(Referral_source = "Misc", SIMD1 = sum(SIMD1), SIMD2 = sum(SIMD2), SIMD3 = sum(SIMD3), SIMD4 = sum(SIMD4), SIMD5 = sum(SIMD5), SIMD6 = sum(SIMD6), SIMD7 = sum(SIMD7), SIMD8 = sum(SIMD8), SIMD9 = sum(SIMD9), SIMD10 = sum(SIMD10))
+
+Summarised_cont_table <-bind_rows(Continguency_table, Misc) 
+
+Summarised_cont_table <- subset(Summarised_cont_table, !Referral_source %in% c("RVH", "RHCYP/RHSC", "Liberton", "Roodlands", "Astley Ainslie Hospital", "Hospital (Outwith LUHD)",  "St Johns", "Social Work Dept", "Leith Community Treatment Centre", "SAS Paramedic Practitioner Referral", "Ophthalmic Referral", "Other", "RIE", "WGH - MIU"))
+
+```
+
+Add sum column
+```{r}
+numbers <- c(54576, 30567, 4002, 1016, 16636, 2484, 1892, 94607, 3082)
+Sum_row <- data.frame(SUM = numbers)
+
+Sum_row <- Sum_row %>% select (SUM)
+Summarised_cont_table <- bind_cols(Summarised_cont_table, Sum_row)
+
+```
+
+Rename LUSCS
+```{r}
+Summarised_cont_table$Referral_source[Summarised_cont_table$Referral_source == "Lothian Unscheduled Care Services"] <- "LUCS"
+```
+
+Create proportional table “Prop_table_referral_deprv”
+```{r}
+SIMD1 <- Summarised_cont_table %>% select(`SIMD1`)
+Prop_SIMD1<- prop.table(SIMD1)
+SIMD2 <- Summarised_cont_table %>% select(`SIMD2`)
+Prop_SIMD2<- prop.table(SIMD2)
+SIMD3 <- Summarised_cont_table %>% select(`SIMD3`)
+Prop_SIMD3<- prop.table(SIMD3)
+SIMD4 <- Summarised_cont_table %>% select(`SIMD4`)
+Prop_SIMD4<- prop.table(SIMD4)
+SIMD5 <- Summarised_cont_table %>% select(`SIMD5`)
+Prop_SIMD5<- prop.table(SIMD5)
+SIMD6 <- Summarised_cont_table %>% select(`SIMD6`)
+Prop_SIMD6<- prop.table(SIMD6)
+SIMD7 <- Summarised_cont_table %>% select(`SIMD7`)
+Prop_SIMD7<- prop.table(SIMD7)
+SIMD8 <- Summarised_cont_table %>% select(`SIMD8`)
+Prop_SIMD8<- prop.table(SIMD8)
+SIMD9 <- Summarised_cont_table %>% select(`SIMD9`)
+Prop_SIMD9<- prop.table(SIMD9)
+SIMD10 <- Summarised_cont_table %>% select(`SIMD10`)
+Prop_SIMD10<- prop.table(SIMD10)
+
+Prop_referral_deprv <- cbind(Prop_SIMD1, Prop_SIMD2, Prop_SIMD3, Prop_SIMD4, Prop_SIMD5, Prop_SIMD6, Prop_SIMD7, Prop_SIMD8, Prop_SIMD9, Prop_SIMD10)
+```
+
+Name referral sources rows
+```{r}
+Prop_referral_deprv$Referral_source <- c("999 Emergency", "Flow Centre", "GP", "LUCS", "NHS 24", "Police", "Reattend", "Self-referral", "Misc")
+```
+
+Move referral source method column to position 1
+```{r}
+colnames(Prop_referral_deprv)[11] <- 'Referral_source'
+colnames(Prop_referral_deprv)[10] <- 'SIMD10'
+
+Update_Prop_referral_deprv <- Prop_referral_deprv %>% select(Referral_source, everything())
+```
+
+rename column “SIMD10” to “SIMDX”
+```{r}
+colnames(Update_Prop_referral_deprv) <- c("Referral_source", "SIMD1", "SIMD2", "SIMD3", "SIMD4", "SIMD5", "SIMD6", "SIMD7", "SIMD8", "SIMD9", "SIMDX")
+```
+
+Assigns factors to the referral method to control which order they appear in plot
+```{r}
+Update_Prop_referral_deprv$Referral <- factor (Update_Prop_referral_deprv$Referral_source, levels = c ("LUCS", "Reattend", "Misc", "GP", "Police", "NHS 24", "Flow Centre", "999 Emergency", "Self-referral"))
+```
+
+Create long table in order to make plot
+```{r}
+Long_prop_referral_deprv <- Update_Prop_referral_deprv %>% pivot_longer(cols = starts_with("SIMD"),  names_to = "Deprivation", values_to = "Proportion")
+```
+
+Display proportions as percentages in new column 
+```{r}
+Long_prop_referral_deprv <- Long_prop_referral_deprv %>% mutate(Percentage = Proportion * 100)
+```
+
+Create summary table for each referral source in order to create individual plots
+```{r}
+Selfreferral <- Long_prop_referral_deprv %>% filter(Referral=='Self-referral')
+Selfreferral$Percentage <- round(Selfreferral$Percentage, 2)
+
+
+Emergency <- Long_prop_referral_deprv %>% filter(Referral=='999 Emergency')
+Emergency$Percentage <- round(Emergency$Percentage, 2)
+
+
+Flow <- Long_prop_referral_deprv %>% filter(Referral=='Flow Centre')
+Flow$Percentage <- round(Flow$Percentage, 2)
+
+
+NHS24 <- Long_prop_referral_deprv %>% filter(Referral=='NHS 24')
+NHS24$Percentage <- round(NHS24$Percentage, 2)
+
+
+Police <- Long_prop_referral_deprv %>% filter(Referral=='Police')
+Police$Percentage <- round(Police$Percentage, 2)
+
+
+GP <- Long_prop_referral_deprv %>% filter(Referral=='GP')
+GP$Percentage <- round(GP$Percentage, 2)
+
+
+Misc <- Long_prop_referral_deprv %>% filter(Referral=='Misc')
+Misc$Percentage <- round(Misc$Percentage, 2)
+
+
+Reattend <- Long_prop_referral_deprv %>% filter(Referral=='Reattend')
+Reattend$Percentage <- round(Reattend$Percentage, 2)
+
+
+LUCS <- Long_prop_referral_deprv %>% filter(Referral=='LUCS')
+LUCS$Percentage <- round(LUCS$Percentage, 2)
+```
+
+# Label: Number of RIE ED Attendances between 2022 and 2023 based on Referral Source
+
+```{r}
+ggplot(Summarised_freq_referral, aes (x = Referral_source, y=Frequency, fill = Referral_source)) + geom_col() + geom_text(aes(label = Frequency), vjust = -0.5) + scale_fill_manual(values = c("Self Referral to A&E" = "#CAB2D6", "Reattend" = "#1F78B4", "Police" = "#FB9A99", "NHS 24" = "#E31A1C", "Misc" = "#B2DF8A", "LUCS" = "#A6CEE3", "General Practitioner" = "#33A02C", "Flow Centre" = "#FDBF6F", "999 Emergency" = "#FF7F00")) + labs (x= "Referral Source", y = "Number of Attendances") + scale_x_discrete(labels = c('General Practitioner' = 'GP', 'Self Referral to A&E'= 'Self Referral'))
+```
+# Label: RIE ED attendances in the period of 2022 and 2023 categorised by deprivation decile
+```{r}
+ggplot(Freq_deprv, aes (x = Deprivation_decile, y=Frequency)) + geom_col() + geom_text(aes(label = Frequency), vjust = -0.5) + labs (x= "Deprivation Decile", y = "Number of Attendances") + scale_x_discrete(labels = c('SIMD X' = 'SIMD 10'))
+```
+#Label: Breakdown of attendances to the RIE ED in 2022 and 2023 by the percentage of referral source recorded in each deprivation decile
+```{r}
+ggplot(Long_prop_referral_deprv, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col (position = 'fill') + scale_fill_brewer(palette = "Paired") + scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, by = 0.1)) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + labs (x= "Deprivation Decile", y="Percentage of Attendances (%)")
+```
+# Label: Breakdown of attendances to the RIE ED in 2022 and 2023 by the percentage of referral source recorded in each deprivation decile (with labels)
+```{r}
+ggplot(Long_prop_referral_deprv, aes(x = Deprivation, y = Proportion, fill = Referral)) + geom_col (position = 'fill') + scale_fill_brewer(palette = "Paired") + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + geom_text(aes(label = scales::percent(Proportion)),  position = position_stack(vjust = 0.5),color = 'white', size = 2.5)
+```
+
+Create tiff of plot
+```{r}
+tiff("Deprivation_referralsource_prop_plot.tiff", width = 18, height = 18, units = 'in', res = 300)
+ggplot(Long_prop_referral_deprv, aes(x = Deprivation, y = Proportion, fill = Referral)) + geom_col (position = 'fill') + scale_fill_brewer(palette = "Paired") + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + geom_text(aes(label = scales::percent(Proportion)),  position = position_stack(vjust = 0.5),color = 'white', size = 2.5)
+dev.off()
+```
+
+
+# Label: The percentage of RIE ED referrals by self-referral in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(Selfreferral, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#CAB2D6")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(40, 50)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+
+# Label: The percentage of RIE ED referrals from 999 Emergency in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(Emergency, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#FF7F00")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(20, 35)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+# Label: The percentage of RIE ED referrals from the Flow Centre in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(Flow, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#FDBF6F")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(10, 20)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+ 
+```
+# Label: The percentage of RIE ED referrals from NHS 24 in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(NHS24, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#E31A1C")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(5, 10)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+
+# Label: The percentage of RIE ED referrals from the Police in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(Police, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#FB9A99")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(0, 3)) + labs (x= "Deprivation Decile") + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+# Label: The percentage of RIE ED referrals from the GP in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(GP, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#33A02C")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(1, 2.5)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+# Label: The percentage of RIE ED referrals from Miscellaneous sources in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(Misc, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#B2DF8A")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(1, 2)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+
+# Label: The percentage of RIE ED referrals recorded as re-attendances in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(Reattend, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#1F78B4")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(0.6, 1.2)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+# Label: The percentage of RIE ED referrals from LUCS in each SIMD decile for the period of 2022 and 2023
+```{r}
+ggplot(LUCS, aes(x = Deprivation, y = Percentage, fill = Referral)) + geom_col() + geom_text(aes(label = Percentage), vjust = -0.5) + scale_fill_manual(values = c("#A6CEE3")) + scale_x_discrete(labels = c('SIMDX' = 'SIMD10')) + coord_cartesian(ylim=c(0.3, 0.6)) + labs (x= "Deprivation Decile", y = "Percentage of the total attendaces (%)")
+```
+
